@@ -1,7 +1,7 @@
 from transformers import pipeline, AutoTokenizer, AutoModel
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
-import re
+# import re
 
 device = 0 if torch.cuda.is_available() else -1
 
@@ -17,8 +17,8 @@ print("✅ ASR model đã sẵn sàng.")
 
 print(f"📦 Đang load NLP model lên {'GPU' if device == 0 else 'CPU'}...")
 
-tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2", trust_remote_code=True)
-model = AutoModel.from_pretrained("vinai/phobert-base-v2", trust_remote_code=True, use_safetensors=True)
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", trust_remote_code=True)
+model = AutoModel.from_pretrained("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", trust_remote_code=True, use_safetensors=True)
 
 print("✅ NLP model đã sẵn sàng.")
 
@@ -109,79 +109,124 @@ template_embeddings = {k: get_sentence_embedding(k) for k in intent_templates.ke
 def extract_numeric_condition(sentence: str) -> dict:
     patterns = [
         # Nhiệt độ
+        (# vd: nhiệt độ khoảng 30 độ C
+            r"(nhiệt độ|nóng|lạnh) .*? (\d+)? .*?",
+            "temperature"
+        ),
+        (# vd: nhiệt độ 30 độ C
+            r"(nhiệt độ|nóng|lạnh) (\d+)? .*?",
+            "temperature"
+        ),
+        (# vd: nhiệt độ cao/thấp
+            r"(nhiệt độ|nóng|lạnh) .*?",
+            "temperature"
+        ),
         (
-            r"(trời)? (nhiệt[\s_]*độ|nóng|lạnh).*?(((\d+)\s*(độ[\s_]*[CcKk]?|°[CcKk]?)?)|(thấp|cao))?",
+            r"(nóng|lạnh)",
             "temperature"
         ),
         # Độ ẩm
+        (# vd: độ ẩm khoảng 70%
+            r"(độ ẩm|nồm|khô) .*? (\d+)?",
+            "humidity"
+        ),
+        (# vd: độ ẩm 70%
+            r"(độ ẩm|nồm|khô) (\d+)? .*?",
+            "humidity"
+        ),
+        (# vd: độ ẩm cao/thấp/khô/ẩm/ít/nhiều
+            r"(độ ẩm|nồm|khô) .*?",
+            "humidity"
+        ),
         (
-            r"(trời)? (độ[\s_]*ẩm).*?((\d+)\s*(phần[\s_]*trăm|%)?)?",
+            r"(ẩm|nồm|khô)",
             "humidity"
         ),
         # Ánh sáng
-        {
-            r"(trời|buổi)?\s*\w*\s*(tối|sáng)",
-            "light"
-        },
-        # Quạt
-        {
-            r"(mức|tốc độ).*?((\d+)\s*(phần[\s_]*trăm|%))|((nhanh|chậm|vừa|thường|mạnh|yếu|thấp|cao)| \s* \w*)",
-            "fan"
-        }
-        # Thời gian: giờ, phút, giây (có thể có hoặc không)
         (
-            r"(lúc|sau|trước).*?(?P<hour>\d+)\s*(giờ|h|g)?(?:\s*(?P<minute>\d+)\s*(phút|p|m))?(?:\s*(?P<second>\d+)\s*(giây|s))?",
+            r"(sáng|tối)",
+            "light"
+        ),
+        # Quạt
+        (# vd: mức khoảng 70%
+            r"(mức|tốc độ|quay) .*? (\d+)?",
+            "fan"
+        ),
+        (# vd: mức 70%
+            r"(mức|tốc độ|quay) (\d+)? .*?",
+            "fan"
+        ),
+        (# vd: mức 1/2/3
+            r"(mức|tốc độ) (\d+)?",
+            "fan"
+        ),
+        (# vd: mức cao/thấp/vừa
+            r"(mức|tốc độ|quay) .*?",
+            "fan"
+        ),
+        (
+            r"(nhanh|mạnh|cao|chậm|yếu|thấp|vừa|thường)",
+            "fan"
+        ),
+        # Thời gian
+        (
+            r"(sau)\s*"
+            r"(?:(?P<hour>\d+)\s*(giờ|h|g)\s*)?"
+            r"(?:(?P<minute>\d+)\s*(phút|p|m)\s*)?"
+            r"(?:(?P<second>\d+)\s*(giây|s))?",
             "time"
         )
     ]
 
     for pattern, sensor in patterns:
-        match = re.search(pattern, sentence)
+        match = re.search(pattern, sentence, re.IGNORECASE)
+        # print(pattern)
         if match:
-            # Xác định toán tử logic
+            val = None
+            unit = ""
             op = "="
-            if any(kw in sentence for kw in ["trên", "sau", "nóng", "nhiều hơn"]):
-                op = ">"
-            elif any(kw in sentence for kw in ["dưới", "trước", "lạnh", "ít hơn"]):
-                op = "<"
 
+            if any(kw in sentence for kw in ["trên", "nóng", "nhiều hơn", "ẩm", "nồm", "cao"]):
+                op = ">"
+                if "độ ẩm" in sentence and not any(kw in sentence for kw in ["trên", "nhiều hơn", "nồm", "cao"]):
+                    op = "="
+            elif any(kw in sentence for kw in ["dưới", "lạnh", "ít hơn", "khô", "thấp"]):
+                op = "<"
+            print(f"match: {match.groups()}")
             if sensor == "time":
+                unit = "seconds"
                 hour = int(match.group("hour")) if match.group("hour") else 0
                 minute = int(match.group("minute")) if match.group("minute") else 0
                 second = int(match.group("second")) if match.group("second") else 0
-                return {
-                    "sensor": "time",
-                    "op": op,
-                    "value": {
-                        "hour": hour,
-                        "minute": minute,
-                        "second": second
-                    },
-                    "unit": "time"
-                }
-            if len(match.groups()) < 2:
-                if sensor == "temperature":
-                    if "nóng" in sentence:
-                        op = ">"
-                        val = 30
-                    elif "lạnh" in sentence:
-                        op = "<"
-                        val = 20
-                elif sensor == "humidity":
-                    if "ẩm" in sentence:
-                        op = ">"
-                        val = 70
-                    elif "khô" in sentence:
-                        op = "<"
-                        val = 30
-            if sensor == "temperature":
-                if "thấp" in match.group(2):
-                    op = "<"
-                    val = 20
-                elif "cao" in match.group(2):
-                    op = ">"
+                val = hour * 3600 + minute * 60 + second
+            elif sensor == "temperature":
+                unit = "°C"
+                if len(match.groups()) > 1:
+                    if match.group(2):
+                        op = "="
+                        val = int(match.group(2))
+                        if any(kw in sentence for kw in ["độ k", "°k", "°ka", "độ ka", "độ ca", "°ca"]) and "độ khoảng" not in sentence:
+                            val -= 273
+                elif any(kw in sentence for kw in ["nóng", "cao"]):
                     val = 30
+                elif any(kw in sentence for kw in ["lạnh", "thấp"]):
+                    val = 20
+            elif sensor == "humidity":
+                unit = "%"
+                if len(match.groups()) > 1:
+                    if match.group(2):
+                        op = "="
+                        val = int(match.group(2))
+                elif any(kw in sentence for kw in ["khô", "thấp", "ít"]):
+                    val = 30
+                elif "nồm" in sentence:
+                    val = 90
+                elif any(kw in sentence for kw in ["cao", "nhiều"]):
+                    val = 70
+                elif "ẩm" in sentence and "độ ẩm" not in sentence:
+                    val = 70
             elif sensor == "light":
+                unit = "lux"
                 if "tối" in sentence:
                     op = "<"
                     val = 20
@@ -189,41 +234,37 @@ def extract_numeric_condition(sentence: str) -> dict:
                     op = ">"
                     val = 30
             elif sensor == "fan":
-                if any(kw in sentence for kw in ["nhanh", "mạnh", "cao"]):
-                    op = "="
+                unit = "%"
+                if len(match.groups()) > 1:
+                    if match.group(2):
+                        op = "="
+                        val = int(match.group(2))
+                        if val == 1:# 1 là mức thấp nhất
+                            val = 30
+                        elif val == 2:
+                            val = 70
+                        elif val == 3:
+                            val = 100
+                elif any(kw in sentence for kw in ["nhanh", "mạnh", "cao"]):
                     val = 100
                 elif any(kw in sentence for kw in ["chậm", "yếu", "thấp"]):
-                    op = "="
                     val = 30
                 elif any(kw in sentence for kw in ["vừa", "thường"]):
-                    op = "="
                     val = 70
 
-            val = int(match.group(2))
-            unit = match.group(3) if match.lastindex and match.lastindex >= 3 else ""
-
-            if sensor == "temperature":
-                if unit.lower() in ["độ_k", "độ k", "°k"]:
-                    val -= 273
-                unit = "°C"
-            elif sensor == "humidity":
-                unit = "%"
-            elif sensor == "light":
-                unit = "lux"
-            elif sensor == "fan":
-                unit = "%"
             return {
                 "sensor": sensor,
                 "op": op,
                 "value": val,
-                "unit": unit.strip() if unit else ""
+                "unit": unit
             }
 
     return None
 
+# Dự đoán intent + điều kiện
 def nlp_pipeline(sentence: str) -> dict:
     condition = extract_numeric_condition(sentence)
-    sentence_wo_condition = re.sub(r"khi .*|nếu .*|lúc .*|quạt .*", "", sentence).strip()
+    sentence_wo_condition = re.sub(r"khi .*|nếu .*|lúc .*|khi trời .*|nếu trời .*|lúc trời .*|sau .*", "", sentence).strip()
 
     emb = get_sentence_embedding(sentence_wo_condition).unsqueeze(0)
     sims = {}
