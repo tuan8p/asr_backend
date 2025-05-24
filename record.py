@@ -11,7 +11,7 @@ def countdown_timer(duration):
         time.sleep(1)
     print("⏳ Còn lại: 0 giây         ")
 
-def is_valid_audio(file_path, min_rms=0.01, max_silence_ratio=0.8):
+def is_valid_audio(file_path, min_rms=0.01, max_silence_ratio=0.9):
     audio, sr = sf.read(file_path)
     if audio.ndim > 1:
         audio = np.mean(audio, axis=1)  # Convert to mono
@@ -65,14 +65,15 @@ def record_audio(filename="recorded.wav", duration=3, fs=16000):
 
     write(filename, fs, recording)
     print("✅ Ghi âm xong.")
-    # return filename
 
     start_time = time.time()
+
+    # return filename, start_time
 
     # Kiểm tra chất lượng
     if is_valid_audio(filename):
         return preprocess_audio(filename), start_time
-        # return filename
+        # return filename, start_time
     else:
         print("❌ Âm thanh không đạt yêu cầu. Hãy thử lại.")
-        return None
+        return None, start_time
