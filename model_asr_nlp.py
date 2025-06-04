@@ -1,26 +1,26 @@
 from transformers import pipeline, AutoTokenizer, AutoModel
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
-# import re
+import re
 
 device = 0 if torch.cuda.is_available() else -1
 
-print(f"📦 Đang load ASR model lên {'GPU' if device == 0 else 'CPU'}...")
+print(f"Đang load ASR model lên {'GPU' if device == 0 else 'CPU'}...")
 
 asr_pipeline = pipeline(
     "automatic-speech-recognition",
-    model="whisper-small-vi",
+    model="tuan8p/whisper-small-vi",
     device=device
 )
 
-print("✅ ASR model đã sẵn sàng.")
+print("ASR model đã sẵn sàng.")
 
-print(f"📦 Đang load NLP model lên {'GPU' if device == 0 else 'CPU'}...")
+print(f"Đang load NLP model lên {'GPU' if device == 0 else 'CPU'}...")
 
 tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", trust_remote_code=True)
 model = AutoModel.from_pretrained("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", trust_remote_code=True, use_safetensors=True)
 
-print("✅ NLP model đã sẵn sàng.")
+print("NLP model đã sẵn sàng.")
 
 def get_sentence_embedding(sentence: str) -> torch.Tensor:
     """Chuyển câu thành vector embedding trung bình (mean pooling)."""
@@ -34,56 +34,36 @@ def get_sentence_embedding(sentence: str) -> torch.Tensor:
 # Mẫu câu lệnh và intent tương ứng
 intent_templates = {
     "bật đèn": "TURN_ON_LIGHT",
-    # "mở đèn": "TURN_ON_LIGHT",
-    # "đèn bật": "TURN_ON_LIGHT",
     "không tắt đèn": "TURN_ON_LIGHT",
-    # "đèn sáng": "TURN_ON_LIGHT",
     "tối quá": "TURN_ON_LIGHT",
     "không thấy gì": "TURN_ON_LIGHT",
     "tối như mực": "TURN_ON_LIGHT",
     "tối rồi": "TURN_ON_LIGHT",
-    # "đèn tắt": "TURN_OFF_LIGHT",
     "tắt đèn": "TURN_OFF_LIGHT",
-    # "đèn không sáng": "TURN_OFF_LIGHT",
-    # "đèn không mở": "TURN_OFF_LIGHT",
     "không bật đèn": "TURN_OFF_LIGHT",
     "sáng quá": "TURN_OFF_LIGHT",
     "chói quá": "TURN_OFF_LIGHT",
     "sáng rồi": "TURN_OFF_LIGHT",
-
     "bật quạt": "TURN_ON_FAN",
     "tắt quạt": "TURN_OFF_FAN",
-    # "quạt chạy": "TURN_ON_FAN",
     "quạt không ngừng": "TURN_ON_FAN",
     "nóng quá": "TURN_ON_FAN",
     "hầm quá": "TURN_ON_FAN",
-    # "mở quạt": "TURN_ON_FAN",
-    # "quạt mở": "TURN_ON_FAN",
     "quạt ngừng": "TURN_OFF_FAN",
-    # "quạt không chạy": "TURN_OFF_FAN",
     "không tắt quạt": "TURN_ON_FAN",
-    # "quạt không mở": "TURN_OFF_FAN",
     "không bật quạt": "TURN_OFF_FAN",
     "lạnh quá": "TURN_OFF_FAN",
-    # "rét quá": "TURN_OFF_FAN",
-
     "mở cửa": "OPEN_DOOR",
     "mở khóa cửa": "OPEN_DOOR",
     "tắt khóa cửa": "OPEN_DOOR",
-    # "cửa mở": "OPEN_DOOR",
     "không đóng cửa": "OPEN_DOOR",
-    # "tôi chuẩn bị ra ngoài": "OPEN_DOOR",
     "tôi sắp ra ngoài": "OPEN_DOOR",
     "tôi chuẩn bị về nhà": "OPEN_DOOR",
-    # "tôi đi ra ngoài": "OPEN_DOOR",
     "đóng cửa": "CLOSE_DOOR",
     "khóa cửa": "CLOSE_DOOR",
-    # "cửa đóng": "CLOSE_DOOR",
     "không mở cửa": "CLOSE_DOOR",
     "tôi ra ngoài rồi": "CLOSE_DOOR",
-    # "tôi về nhà rồi": "CLOSE_DOOR",
     "tôi vô nhà rồi": "CLOSE_DOOR",
-    # "tôi về rồi": "CLOSE_DOOR",
 
     "bật chế độ ban đêm": "TURN_ON_LIGHT_AND_TURN_ON_FAN_AND_CLOSE_DOOR",
     "tắt chế độ ban đêm": "TURN_OFF_LIGHT_AND_TURN_OFF_FAN_AND_OPEN_DOOR",
@@ -105,7 +85,7 @@ def get_sentence_embedding(sentence: str) -> torch.Tensor:
 # Lưu sẵn embeddings của intent mẫu
 template_embeddings = {k: get_sentence_embedding(k) for k in intent_templates.keys()}
 
-# Trích xuất điều kiện số (temperature, humidity, time)
+# Trích xuất điều kiện số
 def extract_numeric_condition(sentence: str) -> dict:
     patterns = [
         # Nhiệt độ
@@ -180,7 +160,6 @@ def extract_numeric_condition(sentence: str) -> dict:
 
     for pattern, sensor in patterns:
         match = re.search(pattern, sentence, re.IGNORECASE)
-        # print(pattern)
         if match:
             val = None
             unit = ""
